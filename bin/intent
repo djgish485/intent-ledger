@@ -197,10 +197,7 @@ def cmd_open(args) -> None:
     print(f"({len(entries)} open)")
 
 
-def cmd_append(args) -> None:
-    root = repo_root()
-    raw = args.json if args.json else sys.stdin.read()
-    d = json.loads(raw)
+def append_one(root: Path, d: dict, existing: set) -> str:
     ts = d.get("ts") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if not d.get("intent"):
         sys.exit("intent: entry needs an \"intent\" field (1-2 sentence normalized statement)")
@@ -215,13 +212,38 @@ def cmd_append(args) -> None:
         if d.get(opt):
             entry[opt] = d[opt]
     entry["status"] = d.get("status") if d.get("status") in STATUSES else "open"
-    path = intent_dir(root) / "backlog.jsonl"
-    existing = {e.get("key") for e in read_jsonl(path)}
     if entry["key"] in existing:
-        sys.exit(f"intent: entry {entry['key']} already exists")
-    with open(path, "a") as f:
+        return ""
+    with open(intent_dir(root) / "backlog.jsonl", "a") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    print(f"appended {entry['key']} — commit .intent/backlog.jsonl with your change")
+    existing.add(entry["key"])
+    return entry["key"]
+
+
+def cmd_append(args) -> None:
+    root = repo_root()
+    existing = {e.get("key") for e in read_jsonl(intent_dir(root) / "backlog.jsonl")}
+    if args.file:
+        added = skipped = 0
+        for line in Path(args.file).read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if append_one(root, json.loads(line), existing):
+                added += 1
+            else:
+                skipped += 1
+        print(f"appended {added}, skipped {skipped} duplicates — commit .intent/backlog.jsonl")
+        return
+    raw = args.json if args.json else sys.stdin.read()
+    d = json.loads(raw)
+    ts = d.get("ts") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if not d.get("intent"):
+        sys.exit("intent: entry needs an \"intent\" field (1-2 sentence normalized statement)")
+    key = append_one(root, d, existing)
+    if not key:
+        sys.exit("intent: entry already exists")
+    print(f"appended {key} — commit .intent/backlog.jsonl with your change")
 
 
 def cmd_status(args) -> None:
@@ -331,8 +353,9 @@ def main() -> None:
     sub.add_parser("laws", help="print the contracts that bind every change").set_defaults(fn=cmd_laws)
     sub.add_parser("open", help="list open backlog entries (the live to-do list)").set_defaults(fn=cmd_open)
 
-    a = sub.add_parser("append", help="append a backlog entry (JSON arg or stdin)")
+    a = sub.add_parser("append", help="append backlog entries (JSON arg, stdin, or --file JSONL)")
     a.add_argument("json", nargs="?")
+    a.add_argument("-f", "--file", help="bulk-append a JSONL file (dedupes by key)")
     a.set_defaults(fn=cmd_append)
 
     s = sub.add_parser("status", help="update an entry's lifecycle status")
