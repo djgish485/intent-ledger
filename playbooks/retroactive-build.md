@@ -90,6 +90,20 @@ The retroactive build is complete when: every source from Step 1 has been proces
 
 ---
 
+## Large evidence corpora: build a reading room, not a feature
+
+If the project's raw history is large (tens of thousands of transcript turns), ad-hoc
+grepping gets slow and unreliable. Build yourself a disposable local index — a per-machine
+SQLite with one table of normalized turns (source, role, timestamp, content) and an FTS
+index over it; add embeddings only if lexical search demonstrably misses paraphrases.
+Three rules: it lives outside the repo (raw conversations never enter git), it is derived
+(rebuildable from the sources at any time), and it is yours, not the tool's — intent-ledger
+deliberately stays small, managing only the distilled layers. Keep a small bookkeeping
+table of which sources/files you have ingested; coverage gaps in the evidence are the most
+common cause of a wrong retroactive build, and you cannot audit coverage you did not record.
+The index keeps earning its disk space after the build: it is how you fact-check the ledger
+itself when someone asks "did I really say that?"
+
 ## Pitfalls
 
 **Silently missing a whole source.** The most common failure. Produce the inventory table before extracting anything and treat a missing source as a blocker, not a skip.
